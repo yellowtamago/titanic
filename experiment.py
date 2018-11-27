@@ -6,11 +6,11 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.cross_validation import train_test_split
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import LabelBinarizer
-
+from xgboost import XGBClassifier
 
 # selecting data for model
-train_data = '/home/user/Desktop/titanic/train.csv'
-test_data = '/home/user/Desktop/titanic/test.csv'
+train_data = 'train.csv'
+test_data = 'test.csv'
 train = pd.read_csv(train_data)
 test = pd.read_csv(test_data)
 
@@ -19,7 +19,7 @@ df = train.append(test, ignore_index=True)
 # print(df.head())
 def process_data(df):
     # specify features
-    df_features = ['Pclass', 'Fare', 'Cabin', 'Name', 'SibSp', 'Parch', 'Age', 'Sex', 'Embarked']
+    df_features = ['Pclass', 'Fare', 'Cabin', 'Name', 'SibSp', 'Parch', 'Age', 'Sex', 'Embarked', 'Ticket']
 
     X = df[df_features]
 
@@ -38,14 +38,24 @@ def process_data(df):
     X = pd.merge(X, embarked_matrix, left_index=True, right_index=True)
     del X['Embarked']
 
-    age_list = X["Age"].dropna()
-    average_age = age_list.mean()
-    X['Age'] = X['Age'].fillna(average_age)
+    parch_group = list(X.groupby('Parch'))
+    base = []
+    for x in parch_group:
+        x = x[1]
+        age_list = x['Age'].dropna()
+        average_age = age_list.mean()
+        x['Age'] = x['Age'].fillna(average_age)
+        base.append(x)
+    age = pd.concat(base)
+    age = pd.DataFrame(age['Age'])
+    del X['Age']
+    X = pd.merge(X, age, left_index=True, right_index=True)
 
     X.loc[X["Sex"] == "male", "Sex"] = 0
     X.loc[X["Sex"] == "female", "Sex"] = 1
 
     X["Cabin"] = X["Cabin"].fillna('Z')
+    X['Cabin_count'] = [len(x.split(' ')) for x in X['Cabin']]
     X["Cabin"] = X["Cabin"].apply(lambda x: x[0])
     # sns.barplot(x="Cabin", y="Fare", data=X)
     # plt.show()
@@ -76,17 +86,21 @@ X_pred = processed_df[len(train):]
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 # building model
-titanic_model = RandomForestClassifier(random_state=1)
+# titanic_model = RandomForestClassifier(random_state=1)
+xgboost_model = XGBClassifier()
 
-titanic_model.fit(X_train, y_train)
+# titanic_model.fit(X_train, y_train)
+xgboost_model.fit(X_train, y_train)
 
-y_pred = titanic_model.predict(X_test)
+# y_pred = titanic_model.predict(X_test)
+y_pred = xgboost_model.predict(X_test)
 
 print(accuracy_score(y_test, y_pred)*100.0)
 
 ids = test['PassengerId']
 
-predictions = titanic_model.predict(X_pred)
+# predictions = titanic_model.predict(X_pred)
+predictions = xgboost_model.predict(X_pred)
 output = pd.DataFrame({'PassengerId': ids, 'Survived': predictions})
-output.to_csv('prediction.csv', index=False)
+output.to_csv('prediction_xgboost.csv', index=False)
 
