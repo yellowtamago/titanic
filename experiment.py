@@ -1,4 +1,5 @@
 import pandas as pd
+import xgboost as xgb
 import seaborn as sns
 import matplotlib.pyplot as plt
 
@@ -6,7 +7,6 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.cross_validation import train_test_split
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import LabelBinarizer
-from xgboost import XGBClassifier
 
 # selecting data for model
 train_data = 'train.csv'
@@ -19,7 +19,7 @@ df = train.append(test, ignore_index=True)
 # print(df.head())
 def process_data(df):
     # specify features
-    df_features = ['Pclass', 'Fare', 'Cabin', 'Name', 'SibSp', 'Parch', 'Age', 'Sex', 'Embarked', 'Ticket']
+    df_features = ['Pclass', 'Fare', 'Cabin', 'Name', 'SibSp', 'Parch', 'Age', 'Sex', 'Embarked']
 
     X = df[df_features]
 
@@ -64,7 +64,8 @@ def process_data(df):
     del X["Cabin"]
 
     X["Name"] = X["Name"].apply(lambda x: x.split(",")[1].split(".")[0].strip())
-    X['Name'] = X['Name'].replace(['Lady', 'the Countess', 'Capt', 'Col','Don', 'Dr', 'Major', 'Rev', 'Sir', 'Jonkheer', 'Dona'], 'Rare')
+    X['Name'] = X['Name'].replace(['Lady', 'the Countess', 'Capt', 'Col','Don', 'Dr', 'Major', 'Rev', 'Sir', 'Jonkheer',
+                                   'Dona'], 'Rare')
     X['Name'] = X['Name'].replace('Mlle', 'Miss')
     X['Name'] = X['Name'].replace('Ms', 'Miss')
     X['Name'] = X['Name'].replace('Mme', 'Mrs')
@@ -78,29 +79,44 @@ def process_data(df):
 
 processed_df = process_data(df)
 
-X = processed_df[:len(train)]
+X = processed_df.iloc[:len(train)]
 y = train["Survived"]
-X_pred = processed_df[len(train):]
+X_pred = processed_df.iloc[len(train):]
 
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 # building model
 # titanic_model = RandomForestClassifier(random_state=1)
-xgboost_model = XGBClassifier()
+dtrain = xgb.DMatrix(data=X_train, label=y_train)
+dtest = xgb.DMatrix(data=X_test, label=y_test)
+dpred = xgb.DMatrix(data=X_pred)
+
+param = {
+    "eta": 0.3,
+    "max_depth": 6,
+    "subsample": 0.9,
+    "objective": "binary:logistic",
+    "eval_metric": ["logloss", "error"],
+    "silent": 1
+}
+evallist = [(dtest, 'eval'), (dtrain, 'train')]
+num_round = 10000
+bst = xgb.train(param, dtrain, num_round, evallist, early_stopping_rounds=50)
+
 
 # titanic_model.fit(X_train, y_train)
-xgboost_model.fit(X_train, y_train)
 
 # y_pred = titanic_model.predict(X_test)
-y_pred = xgboost_model.predict(X_test)
-
-print(accuracy_score(y_test, y_pred)*100.0)
+y_pred = bst.predict(dpred)
+thresh = 0.5
+y_pred_thresh = [0 if i<thresh else 1 for i in y_pred]
+# print(accuracy_score(y_test, y_pred)*100.0)
 
 ids = test['PassengerId']
 
 # predictions = titanic_model.predict(X_pred)
-predictions = xgboost_model.predict(X_pred)
-output = pd.DataFrame({'PassengerId': ids, 'Survived': predictions})
-output.to_csv('prediction_xgboost.csv', index=False)
+# predictions = xgboost_model.predict(X_pred)
+output = pd.DataFrame({'PassengerId': ids, 'Survived': y_pred_thresh})
+output.to_csv('prediction_rounded.csv', index=False)
 
